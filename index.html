@@ -345,8 +345,11 @@ const PRESET_DEFS = [
 // 교육과정발표회 연주곡 (판서 기준, 2분박 4박: 한 박 = 2칸)
 const rep = (bar, n) => Array.from({ length: n }, () => bar).flat();
 const SHOW_BAR6 = ['쿵', '따', '쿵', '따', '쿵', '따', '쿵', '따'];
+// 휘모리 관습: 이 칸들은 궁채도 채편으로 넘겨 침 (쿵 → 궁채로 채편). [몇 번째 장단부터, 장단 안 칸 번호] × 4장단
+const SHOW_OVER = [[0, [4, 5, 6]], [4, [2, 3, 4, 5, 6]], [8, [4, 5, 6]], [12, [4, 5, 6]], [16, [4, 5, 6]]]
+  .flatMap(([b, ks]) => [0, 1, 2, 3].flatMap(r => ks.map(k => (b + r) * 8 + k)));
 // rev: 원본을 고치면 올림 → 저장된 예전 원본의 칸을 새 원본으로 바꿈 (빠르기는 유지)
-PRESET_DEFS.unshift({ id: 'show2026', rev: 3, title: '휘모리 2', sub: 2, beats: 4, tempo: 80, perLine: 2,
+PRESET_DEFS.unshift({ id: 'show2026', rev: 5, title: '휘모리 2', sub: 2, beats: 4, tempo: 80, perLine: 2, over: SHOW_OVER,
   cells: [
     ...rep(['덩', '', '덩', '', '쿵', '따', '쿵', ''], 4),   // ① 덩 덩 쿵따 쿵
     ...rep(['덩', '', '(따)', '(따)', '(쿵)', '(따)', '(쿵)', ''], 4), // ② 덩 빼고 작게
@@ -357,7 +360,7 @@ PRESET_DEFS.unshift({ id: 'show2026', rev: 3, title: '휘모리 2', sub: 2, beat
     '쿵', '따', '쿵', '따', '쿵', '따', '쿵', '',             //    마지막 줄은 쿵으로 끝
     '따', '', '', '', '', '', '', ''                          // 따! (신호 듣고)
   ] });
-const presetSong = d => ({ id: d.id, rev: d.rev || 1, title: d.title, sub: d.sub, beats: d.beats, tempo: d.tempo, perLine: d.perLine || 1, cells: d.cells.slice() });
+const presetSong = d => ({ id: d.id, rev: d.rev || 1, title: d.title, sub: d.sub, beats: d.beats, tempo: d.tempo, perLine: d.perLine || 1, cells: d.cells.slice(), over: d.over ? d.over.slice() : undefined });
 
 /* ═════════ 3. 저장 ═════════ */
 const STORE_KEY = 'janggu.v1';
@@ -416,9 +419,12 @@ function build(song) {
   });
   // 따를 반 박 안에 연달아 치면 열채 → 궁채 → 열채 … 번갈아 (아이들이 치는 방법)
   const CHAE = ['따', '덕', '더'];
+  // 궁채를 채편으로 넘겨 치는 칸 (휘모리 2). 이 목록이 있는 장단은 그 칸의 쿵만 궁채가 넘어가 치고, 따는 늘 열채
+  const over = song.over ? new Set(song.over) : null;
   let prev = null;
   for (const e of events) {
-    e.cross = !!(e.kind === '따' && prev && CHAE.includes(prev.kind)
+    e.cross = e.kind === '쿵' ? !!over && over.has(e.cell.i) : !!(e.kind === '따' && !over
+      && prev && CHAE.includes(prev.kind)
       && e.start - prev.start <= song.sub / 2 + 1e-6 && !prev.cross);
     prev = e;
   }
@@ -438,7 +444,9 @@ const CY = 430;
 const HEAD = { L: { cx: 205, leather: '#C9B48A' }, R: { cx: 1395, leather: '#D6C59E' } };
 
 function buildJanggu() {
-  svg.setAttribute('viewBox', '60 -10 1480 760');
+  svg.setAttribute('viewBox', '60 -10 1480 810');
+  // 화면이 세로로 길어도 장구를 아래에 붙여 채가 늘 화면 아래 가장자리에서 나오게 함
+  svg.setAttribute('preserveAspectRatio', 'xMidYMax meet');
   const defs = sv('defs', {}, svg);
   const g = sv('linearGradient', { id: 'lacquer', x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
   sv('stop', { offset: 0, 'stop-color': '#fff', 'stop-opacity': .16 }, g);
@@ -488,25 +496,32 @@ function buildJanggu() {
 }
 
 /* ═════════ 6. 채 동작 ═════════
-   궁채(왼손) = 북편, 열채(오른손) = 채편. 손목(축)을 중심으로 돌려 들어올렸다 내려침
-   따를 연달아 칠 때는 궁채가 채편으로 건너가 열채와 번갈아 침 (cross 자세) */
+   아이 시점: 장구를 위에서 내려다보고, 채는 화면 아래(내 손)에서 위쪽 가죽으로 뻗음
+   궁채(왼손) = 북편, 열채(오른손) = 채편. 손목(축)을 중심으로 채 끝을 바깥으로 들었다 내려침
+   따를 연달아 칠 때는 궁채가 몸통 위를 가로질러 채편으로 건너가 열채와 번갈아 침 (cross 자세) */
 const toRot = (p, t) => Math.atan2(t[1] - p[1], t[0] - p[0]) * 180 / Math.PI - 90;
 const POSE = {
-  L: { tip: [212, 400], rot: toRot([470, 70], [212, 400]), dir: 1 },    // 북편 위
-  X: { tip: [1352, 478], rot: toRot([1094, 148], [1352, 478]), dir: -1 }, // 채편 위 (궁채가 건너감)
-  R: { tip: [1392, 405], rot: toRot([1135, 60], [1392, 405]), dir: -1 }
+  L: { tip: [215, 430], rot: toRot([330, 820], [215, 430]), dir: -1 },    // 북편 (왼쪽 아래 손)
+  X: { tip: [1345, 470], rot: toRot([1090, 790], [1345, 470]), dir: 1 },  // 채편 (궁채가 건너감)
+  R: { tip: [1388, 430], rot: toRot([1270, 820], [1388, 430]), dir: 1 }   // 채편 (오른쪽 아래 손)
 };
 const sticks = {
-  L: { len: Math.hypot(470 - 212, 70 - 400), strikes: [] },
-  R: { len: Math.hypot(1135 - 1392, 60 - 405), strikes: [] }
+  L: { len: Math.hypot(330 - 215, 820 - 430), strikes: [] },
+  R: { len: Math.hypot(1270 - 1388, 820 - 430), strikes: [] }
 };
 const MAX_ANGLE = 34;
+const LIFT_SCALE = 0.15; // 들 때 채가 눈 쪽으로 다가와 조금 커 보임
+const VIEW_BOTTOM = 800; // viewBox 아래 끝 = 화면 아래 가장자리 (손은 그 밖)
 
 // 채를 손목(0,0)에서 아래(+y)로 그려 두고, 자세에 따라 옮기고 돌림
 function buildSticks() {
+  // 손잡이 끝이 화면 아래 가장자리 밖으로 나가 보이지 않게 자름
+  const cp = sv('clipPath', { id: 'stickClip', clipPathUnits: 'userSpaceOnUse' }, svg.querySelector('defs'));
+  sv('rect', { x: -2000, y: -2000, width: 6000, height: 2000 + VIEW_BOTTOM }, cp);
+  const layer = sv('g', { 'clip-path': 'url(#stickClip)' }, svg);
   for (const side of ['L', 'R']) {
     const S = sticks[side], L = S.len;
-    S.g = sv('g', { class: 'stick' }, svg);
+    S.g = sv('g', { class: 'stick' }, layer);
     if (side === 'L') {
       sv('line', { x1: 0, y1: -70, x2: 0, y2: L, stroke: '#9C7240', 'stroke-width': 18, 'stroke-linecap': 'round' }, S.g);
       sv('line', { x1: 0, y1: -70, x2: 0, y2: L, stroke: '#D9B98A', 'stroke-width': 13, 'stroke-linecap': 'round' }, S.g);
@@ -572,7 +587,7 @@ function drawStick(side, t) {
   // 채끝(tip)이 가죽에 닿는 자세에서 손목 위치를 거꾸로 구함
   const r = (p.rot + 90) * Math.PI / 180;
   const px = p.tip[0] - S.len * Math.cos(r), py = p.tip[1] - S.len * Math.sin(r);
-  S.g.setAttribute('transform', `translate(${px.toFixed(1)} ${py.toFixed(1)}) rotate(${(p.rot + p.dir * MAX_ANGLE * h).toFixed(2)})`);
+  S.g.setAttribute('transform', `translate(${px.toFixed(1)} ${py.toFixed(1)}) rotate(${(p.rot + p.dir * MAX_ANGLE * h).toFixed(2)}) scale(${(1 + LIFT_SCALE * h).toFixed(3)})`);
 }
 
 let allStrikes = [];
@@ -681,8 +696,10 @@ function stroke(kind, t, dur, dest, dyn = 0, cross = false) {
   const kung = (tt, a) => { addStrike('L', tt, lift); soundKung(tt, a * v, dest); };
   const deok = (tt, a) => { addStrike('R', tt, a * lift); soundDeok(tt, a * v, dest); };
   switch (kind) {
-    case '쿵': kung(t, 1); break;
-    case '따': if (cross) { addStrike('L', t, lift, 'R'); soundDeok(t, v, dest); break; }
+    // 궁채로 채편을 쳐도 소리는 쿵
+    case '쿵': if (cross) { addStrike('L', t, lift, 'R'); soundKung(t, v, dest); break; }
+      kung(t, 1); break;
+    case '따': if (cross) { addStrike('L', t, lift, 'R'); soundKung(t, v, dest); break; }
       deok(t, 1); break;
     case '덕': deok(t, 1); break;
     case '더': deok(t, 0.6); break;
@@ -1135,12 +1152,14 @@ function goCell(j, caretEnd) {
 function insertCell(at) {
   const song = curSong();
   song.cells.splice(at, 0, '');
+  if (song.over) song.over = song.over.map(k => k >= at ? k + 1 : k);
   save(); refreshLight(); renderGrid(at);
 }
 function removeCell(i) {
   const song = curSong();
   if (song.cells.length <= 1) return;
   song.cells.splice(i, 1);
+  if (song.over) song.over = song.over.filter(k => k !== i).map(k => k > i ? k - 1 : k);
   save(); refreshLight(); renderGrid(Math.max(0, i - 1), true);
 }
 
@@ -1216,7 +1235,8 @@ $('fileIn').addEventListener('change', async () => {
       state.songs.push({ id: newId(), title: s.title, tempo: Math.min(160, Math.max(20, +s.tempo || 60)),
         sub: [2, 3].includes(s.sub) ? s.sub : 3,
         beats: Number.isInteger(s.beats) && s.beats >= 2 && s.beats <= 12 ? s.beats : 4,
-        perLine: Math.min(4, Math.max(1, +s.perLine || 1)), cells: cells.length ? cells : [''] });
+        perLine: Math.min(4, Math.max(1, +s.perLine || 1)), cells: cells.length ? cells : [''],
+        over: Array.isArray(s.over) ? s.over.filter(Number.isInteger) : undefined });
       n++;
     }
     save();
