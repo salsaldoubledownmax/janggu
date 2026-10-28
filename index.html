@@ -349,7 +349,7 @@ const SHOW_BAR6 = ['쿵', '따', '쿵', '따', '쿵', '따', '쿵', '따'];
 const SHOW_OVER = [[0, [4, 5, 6]], [4, [2, 3, 4, 5, 6]], [8, [4, 5, 6]], [12, [4, 5, 6]], [16, [4, 5, 6]], [20, [4, 5, 6, 7]]]
   .flatMap(([b, ks]) => [0, 1, 2, 3].flatMap(r => ks.map(k => (b + r) * 8 + k)));
 // rev: 원본을 고치면 올림 → 저장된 예전 원본의 칸을 새 원본으로 바꿈 (빠르기는 유지)
-PRESET_DEFS.unshift({ id: 'show2026', rev: 6, title: '휘모리 2', sub: 2, beats: 4, tempo: 80, perLine: 2, over: SHOW_OVER,
+PRESET_DEFS.unshift({ id: 'show2026', rev: 7, title: '휘모리 2', sub: 2, beats: 4, tempo: 80, perLine: 2, over: SHOW_OVER,
   cells: [
     ...rep(['덩', '', '덩', '', '쿵', '따', '쿵', ''], 4),   // ① 덩 덩 쿵따 쿵
     ...rep(['덩', '', '(따)', '(따)', '(쿵)', '(따)', '(쿵)', ''], 4), // ② 덩 빼고 작게
@@ -357,10 +357,23 @@ PRESET_DEFS.unshift({ id: 'show2026', rev: 6, title: '휘모리 2', sub: 2, beat
     ...rep(['쿵', '따', '따', '따', '쿵', '따', '쿵', ''], 4), // ④ 쿵따 따따 쿵따 쿵
     ...rep(['쿵', '따', '쿵', '', '쿵', '따', '쿵', ''], 4),   // ⑤ 쿵따 쿵 쿵따 쿵
     ...rep(SHOW_BAR6, 3),                                     // ⑥ 쿵따 쿵따 쿵따 쿵따
-    '쿵', '따', '쿵', '따', '쿵', '따', '쿵', '',             //    마지막 줄은 쿵으로 끝
-    '따', '', '', '', '', '', '', ''                          // 따! (신호 듣고)
+    '쿵', '따', '쿵', '따', '쿵', '따', '쿵', ''              //    마지막 줄은 쿵으로 끝
   ] });
-const presetSong = d => ({ id: d.id, rev: d.rev || 1, title: d.title, sub: d.sub, beats: d.beats, tempo: d.tempo, perLine: d.perLine || 1, cells: d.cells.slice(), over: d.over ? d.over.slice() : undefined });
+// 휘모리 1 (2026-10-28): 다 치면 휘모리 2로 이어짐 (next). 쿵따쿵은 모두 채편으로 넘겨 침
+// 셈여림은 3단계로: 매우 작게 → 작게 (덩), 조금 크게 → 보통 덩, 크게 → 덩!
+PRESET_DEFS.unshift({ id: 'hwimori1', rev: 1, title: '휘모리 1', sub: 2, beats: 4, tempo: 80, perLine: 2, next: 'show2026',
+  over: [0, 1, 2, 3, 14, 16].flatMap(b => [4, 5, 6].map(k => b * 8 + k)),
+  cells: [
+    ...rep(['덩', '', '덩', '', '쿵', '따', '쿵', ''], 4),            // 덩덩 쿵따쿵 ×4
+    ...rep(['따', '', '쿵', '', '따', '', '쿵', ''], 2),              // 따쿵 따쿵 따쿵 따쿵
+    ...rep(['따', '', '쿵', '', '쿵', '', '', ''], 4),                // 따쿵쿵 ×4
+    ...rep(['덩!', '', '덩!', '', '덩!', '', '', '',                  // 덩덩덩(크게)
+            '(덩)', '', '(덩)', '', '(덩)', '', '', ''], 2),          // 덩덩덩(작게)
+    '덩', '덩', '덩', '덩', '쿵', '따', '쿵', '',                     // 덩덩덩덩 쿵따쿵
+    '(덩)', '(덩)', '(덩)', '(덩)', '덩', '덩', '덩', '덩',           // 덩덩덩덩(매우 작게) 덩덩덩덩(조금 크게)
+    '덩!', '덩!', '덩!', '덩!', '쿵', '따', '쿵', ''                  // 덩덩덩덩(크게) 쿵따쿵
+  ] });
+const presetSong = d => ({ id: d.id, rev: d.rev || 1, title: d.title, sub: d.sub, beats: d.beats, tempo: d.tempo, perLine: d.perLine || 1, cells: d.cells.slice(), over: d.over ? d.over.slice() : undefined, next: d.next });
 
 /* ═════════ 3. 저장 ═════════ */
 const STORE_KEY = 'janggu.v1';
@@ -739,15 +752,15 @@ function killSession() {
   }
 }
 
-function schedulePass(from, t0) {
-  for (const e of TL.events) {
+function schedulePass(from, t0, tl = TL, spc = P.spc) {
+  for (const e of tl.events) {
     if (e.start < from - 1e-6) continue;
-    stroke(e.kind, t0 + (e.start - from) * P.spc, e.dur * P.spc, P.session, e.dyn, e.cross);
+    stroke(e.kind, t0 + (e.start - from) * spc, e.dur * spc, P.session, e.dyn, e.cross);
   }
   if (state.metro.mode === 'empty') {
-    for (const bt of TL.beats) {
+    for (const bt of tl.beats) {
       if (bt.b < from - 1e-6 || bt.hasStroke) continue;
-      tick(t0 + (bt.b - from) * P.spc, P.dry);
+      tick(t0 + (bt.b - from) * spc, P.dry);
     }
   }
 }
@@ -947,11 +960,19 @@ function frame() {
   drawStick('R', t);
 
   if (P.playing) {
+    // 이어지는 장단 (휘모리 1 → 2): 반복 재생이 아니면 끝나기 조금 전에 다음 장단을 끊김 없이 예약
+    const nx = !state.loop && curSong().next && state.songs.find(s => s.id === curSong().next);
     if (state.loop && !P.nextPass && ctx.currentTime > P.endT - 0.8) {
       schedulePass(0, P.endT);
       P.nextPass = { t: P.endT };
+    } else if (nx && !P.nextPass && ctx.currentTime > P.endT - 0.8) {
+      const spc = 60 / nx.tempo / nx.sub;
+      schedulePass(0, P.endT, build(nx), spc);
+      P.nextPass = { t: P.endT, song: nx, spc };
     }
     if (P.nextPass && t >= P.nextPass.t) {
+      // 다음 장단으로 넘어가면 제목·악보줄을 그 장단으로 바꿈 (재생은 그대로)
+      if (P.nextPass.song) { state.cur = P.nextPass.song.id; save(); refresh(true); P.spc = P.nextPass.spc; }
       P.passStart = P.nextPass.t; P.from = 0;
       P.endT = P.passStart + TL.total * P.spc;
       P.nextPass = null;
